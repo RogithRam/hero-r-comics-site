@@ -387,7 +387,7 @@ footer{padding:40px 8px;text-align:center;color:var(--ink-faint);font-size:13px;
 
   // ---- Wizard ----
   window.startCreate = function(){
-    wiz = { step:0, storyMode:'preset', storyId:null, script:'', villainId:null, charType:null, wardrobe:null, avatar: defaultAvatar() };
+    wiz = { step:0, storyMode:'preset', storyId:null, script:'', villainId:null, charType:null, wardrobe:null, avatar: defaultAvatar(), inputMode:'build', photoDataUrl:null };
     nav('create'); renderStep();
   };
 
@@ -434,38 +434,95 @@ footer{padding:40px 8px;text-align:center;color:var(--ink-faint);font-size:13px;
       renderBuildStep(host);
     } else if (wiz.step===4){
       var opts = wardrobeOptionsFor(wiz.charType);
+      var wardrobeNote = wiz.inputMode==='photo'
+        ? 'Pick a costume style/theme for the story (it\'s used as a label — your uploaded photo\'s outfit isn\'t redrawn).'
+        : 'Pick a costume — your character\'s outfit changes to match.';
       host.innerHTML = stepHead()+
-        '<p class="muted" style="font-size:13.5px;margin:0 0 16px">Pick a costume — your character\'s outfit changes to match.</p>'+
+        '<p class="muted" style="font-size:13.5px;margin:0 0 16px">'+esc(wardrobeNote)+'</p>'+
         '<div class="grid-opts">'+opts.map(function(w){
+          var thumb = wiz.inputMode==='photo' ? '' :
+            '<span style="flex:none;width:56px;height:84px;border-radius:8px;overflow:hidden;background:var(--panel-2);display:inline-block">'+avatarSVG(wiz.avatar,56,84,w)+'</span>';
           return '<button type="button" class="opt '+(wiz.wardrobe===w?'selected':'')+'" onclick="pickWardrobe(\''+esc(w)+'\')" style="display:flex;gap:12px;align-items:center;text-align:left">'+
-            '<span style="flex:none;width:56px;height:84px;border-radius:8px;overflow:hidden;background:var(--panel-2);display:inline-block">'+avatarSVG(wiz.avatar,56,84,w)+'</span>'+
+            thumb+
             '<span><h4>'+esc(w)+'</h4></span>'+
           '</button>';
         }).join('')+'</div>';
     } else if (wiz.step===5){
+      var previewHTML = wiz.inputMode==='photo' && wiz.photoDataUrl
+        ? '<img src="'+wiz.photoDataUrl+'" style="width:110px;height:165px;object-fit:cover;display:block" />'
+        : avatarSVG(wiz.avatar,110,165,wiz.wardrobe);
       host.innerHTML = stepHead()+
         '<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start">'+
-          '<div style="flex:none;border:2px solid var(--line);border-radius:12px;overflow:hidden;background:var(--panel-2)">'+avatarSVG(wiz.avatar,110,165,wiz.wardrobe)+'</div>'+
+          '<div style="flex:none;border:2px solid var(--line);border-radius:12px;overflow:hidden;background:var(--panel-2)">'+previewHTML+'</div>'+
           '<div class="muted" style="font-size:14.5px;line-height:1.7;flex:1;min-width:200px">'+
             '<div><strong style="color:var(--ink)">Story:</strong> '+(wiz.storyMode==='preset' ? esc((PRESETS.find(function(p){return p.id===wiz.storyId;})||{}).title||'—') : 'Custom script')+'</div>'+
             '<div><strong style="color:var(--ink)">Villain:</strong> '+esc((VILLAINS.find(function(v){return v.id===wiz.villainId;})||{}).title||'—')+'</div>'+
             '<div><strong style="color:var(--ink)">Cast:</strong> '+esc((CHAR_TYPES.find(function(c){return c.id===wiz.charType;})||{}).title||'—')+'</div>'+
-            '<div><strong style="color:var(--ink)">Character:</strong> custom built</div>'+
+            '<div><strong style="color:var(--ink)">Character:</strong> '+(wiz.inputMode==='photo' ? 'your uploaded photo' : 'custom built')+'</div>'+
             '<div><strong style="color:var(--ink)">Wardrobe:</strong> '+esc(wiz.wardrobe||'—')+'</div>'+
           '</div>'+
         '</div>';
     }
   }
 
-  // ---- Character builder (SVG, no photo/AI needed for the preview) ----
+  // ---- Character builder: build from parts (SVG) OR upload a real photo ----
   function renderBuildStep(host){
-    host.innerHTML = stepHead()+
-      '<div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">'+
-        '<div style="flex:none;margin:0 auto">'+
-          '<div id="avatarPreviewBox" style="width:160px;height:240px;border:2px solid var(--line);border-radius:12px;background:var(--panel-2);overflow:hidden">'+avatarSVG(wiz.avatar,160,240,wiz.wardrobe)+'</div>'+
-        '</div>'+
-        '<div style="flex:1;min-width:220px">'+AVATAR_GROUPS.map(renderAvatarGroup).join('')+'</div>'+
+    var modeToggle = '<div style="display:flex;gap:10px;margin-bottom:18px">'+
+        '<button class="btn '+(wiz.inputMode==='build'?'btn-primary':'btn-ghost')+'" style="padding:9px 18px;font-size:13.5px" onclick="setInputMode(\'build\')">Build from parts</button>'+
+        '<button class="btn '+(wiz.inputMode==='photo'?'btn-primary':'btn-ghost')+'" style="padding:9px 18px;font-size:13.5px" onclick="setInputMode(\'photo\')">Upload a photo</button>'+
       '</div>';
+
+    if (wiz.inputMode==='photo'){
+      var preview = wiz.photoDataUrl
+        ? '<img src="'+wiz.photoDataUrl+'" style="width:100%;height:100%;object-fit:cover;display:block" />'
+        : '<div class="muted" style="font-size:12.5px;padding:16px;text-align:center">No photo chosen yet</div>';
+      host.innerHTML = stepHead()+modeToggle+
+        '<div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">'+
+          '<div style="flex:none;margin:0 auto">'+
+            '<div id="photoPreviewBox" style="width:160px;height:240px;border:2px solid var(--line);border-radius:12px;background:var(--panel-2);overflow:hidden;display:flex;align-items:center;justify-content:center">'+preview+'</div>'+
+          '</div>'+
+          '<div style="flex:1;min-width:220px">'+
+            '<p class="muted" style="font-size:13.5px;margin:0 0 14px">Upload a clear photo of the face you want in the comic. It\'ll be restyled into bold-ink comic art — your face structure stays the same, only the art style changes.</p>'+
+            '<input type="file" id="photoInput" accept="image/*" onchange="onPhotoSelected(event)" style="font-size:13px" />'+
+          '</div>'+
+        '</div>';
+    } else {
+      host.innerHTML = stepHead()+modeToggle+
+        '<div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">'+
+          '<div style="flex:none;margin:0 auto">'+
+            '<div id="avatarPreviewBox" style="width:160px;height:240px;border:2px solid var(--line);border-radius:12px;background:var(--panel-2);overflow:hidden">'+avatarSVG(wiz.avatar,160,240,wiz.wardrobe)+'</div>'+
+          '</div>'+
+          '<div style="flex:1;min-width:220px">'+AVATAR_GROUPS.map(renderAvatarGroup).join('')+'</div>'+
+        '</div>';
+    }
+  }
+  window.setInputMode = function(m){ wiz.inputMode=m; renderStep(); };
+  window.onPhotoSelected = function(evt){
+    var file = evt.target.files && evt.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(){
+      resizePhotoToDataUrl(reader.result, 480, 720).then(function(dataUrl){
+        wiz.photoDataUrl = dataUrl;
+        if (wiz.step===3) renderBuildStep($('stepHost'));
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+  // Resizes/crops an uploaded photo to match the comic panel's portrait
+  // aspect ratio (cover-fit, centered) so it composites the same way the
+  // built avatar does.
+  function resizePhotoToDataUrl(srcDataUrl, w, h){
+    return loadImage(srcDataUrl).then(function(img){
+      var c = document.createElement('canvas'); c.width=w; c.height=h;
+      var ctx = c.getContext('2d');
+      var scale = Math.max(w/img.width, h/img.height);
+      var dw = img.width*scale, dh = img.height*scale;
+      var dx = (w-dw)/2, dy = (h-dh)/2;
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,w,h);
+      ctx.drawImage(img, dx, dy, dw, dh);
+      return c.toDataURL('image/png');
+    });
   }
   function renderAvatarGroup(g){
     return '<div style="margin-bottom:16px"><label style="margin-bottom:8px">'+esc(g.label)+'</label>'+
@@ -620,6 +677,7 @@ footer{padding:40px 8px;text-align:center;color:var(--ink-faint);font-size:13px;
     }
     if (wiz.step===1 && !wiz.villainId) return;
     if (wiz.step===2 && !wiz.charType) return;
+    if (wiz.step===3 && wiz.inputMode==='photo' && !wiz.photoDataUrl) return;
     if (wiz.step===4 && !wiz.wardrobe) return;
     if (wiz.step===LAST_STEP){ await finishComic(); return; }
     wiz.step++; renderStep();
@@ -644,12 +702,14 @@ footer{padding:40px 8px;text-align:center;color:var(--ink-faint);font-size:13px;
 
   async function finishComic(){
     var nextBtn = $('nextBtn'); nextBtn.textContent='Rendering character…'; nextBtn.disabled=true;
-    var avatarDataUrl = await rasterizeAvatar(wiz.avatar, 480, 720, wiz.wardrobe);
+    var localImageDataUrl = wiz.inputMode==='photo' && wiz.photoDataUrl
+      ? wiz.photoDataUrl
+      : await rasterizeAvatar(wiz.avatar, 480, 720, wiz.wardrobe);
 
     var usedAI = false;
-    nextBtn.textContent='Generating AI art (can take up to a minute)…';
-    var aiUrl = await stylizeWithAI(avatarDataUrl, wiz.wardrobe);
-    var photoUrl = avatarDataUrl;
+    nextBtn.textContent='Generating comic art (can take up to a minute)…';
+    var aiUrl = await stylizeWithAI(localImageDataUrl, wiz.wardrobe);
+    var photoUrl = localImageDataUrl;
     if (aiUrl){ photoUrl = aiUrl; usedAI = true; }
 
     var title = wiz.storyMode==='preset' ? (PRESETS.find(function(p){return p.id===wiz.storyId;})||{}).title : 'My Script';
@@ -659,7 +719,8 @@ footer{padding:40px 8px;text-align:center;color:var(--ink-faint);font-size:13px;
     var record = {
       title: title, caption: caption,
       storyMode: wiz.storyMode, charType: wiz.charType, wardrobe: wiz.wardrobe,
-      villainId: wiz.villainId, villainTitle: villain.title||'', avatar: wiz.avatar,
+      villainId: wiz.villainId, villainTitle: villain.title||'',
+      avatar: wiz.inputMode==='build' ? wiz.avatar : null,
       photoUrl: photoUrl, episode2Unlocked: false
     };
 
@@ -672,8 +733,8 @@ footer{padding:40px 8px;text-align:center;color:var(--ink-faint);font-size:13px;
     } catch(e){ /* keep going even if save fails */ }
 
     $('resultNote').textContent = usedAI
-      ? 'Generated by AI from the character you built, keeping the same face.'
-      : 'Shown using your in-browser character (the AI art backend didn\'t respond in time — it may be waking up on Render\'s free tier; try again in a minute).';
+      ? 'Styled into bold-ink comic art from your ' + (wiz.inputMode==='photo' ? 'photo' : 'character') + ', keeping the same face/likeness.'
+      : 'Shown using your original image, unstyled (the comic-art backend didn\'t respond in time — it may be waking up on Render\'s free tier; try again in a minute).';
 
     await drawResult(record);
     nav('result');
