@@ -148,6 +148,7 @@ footer{padding:40px 8px;text-align:center;color:var(--ink-faint);font-size:13px;
   <section id="view-create" hidden>
     <div class="card" style="max-width:640px;margin:0 auto">
       <div id="stepHost"></div>
+      <p id="wizError" class="muted" style="color:#FF8A75;font-size:13px;margin:10px 0 0;min-height:16px"></p>
       <div class="wizard-actions">
         <button class="btn btn-ghost" id="backBtn" onclick="wizardBack()">Back</button>
         <button class="btn btn-primary" id="nextBtn" onclick="wizardNext()">Continue</button>
@@ -297,7 +298,7 @@ footer{padding:40px 8px;text-align:center;color:var(--ink-faint);font-size:13px;
     return {cape:false, emblem:false, collar:false, stripes:false};
   }
 
-  var wiz = { step:0, comicTitle:'', lines:['','','',''], villainName:'', villainPhotoDataUrl:null, charType:null, wardrobe:null, avatar: defaultAvatar(), inputMode:'build', photoDataUrl:null };
+  var wiz = { step:0, comicTitle:'', lines:['','','',''], villainName:'', villainPhotoDataUrl:null, photoDataUrl:null };
 
   function $(id){ return document.getElementById(id); }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
@@ -398,13 +399,13 @@ footer{padding:40px 8px;text-align:center;color:var(--ink-faint);font-size:13px;
 
   // ---- Wizard ----
   window.startCreate = function(){
-    wiz = { step:0, comicTitle:'', lines:['','','',''], villainName:'', villainPhotoDataUrl:null, charType:null, wardrobe:null, avatar: defaultAvatar(), inputMode:'build', photoDataUrl:null };
+    wiz = { step:0, comicTitle:'', lines:['','','',''], villainName:'', villainPhotoDataUrl:null, photoDataUrl:null };
     nav('create'); renderStep();
   };
 
   function wardrobeOptionsFor(charType){ return WARDROBES[charType] || []; }
 
-  var STEP_TITLES = ['Write the conversation','Second character','Who is the star?','Build your character','Pick a wardrobe','Review & create'];
+  var STEP_TITLES = ['Write the conversation','Second character','Your photo','Review & create'];
   var LAST_STEP = STEP_TITLES.length - 1;
 
   function stepHead(){
@@ -444,40 +445,29 @@ footer{padding:40px 8px;text-align:center;color:var(--ink-faint);font-size:13px;
           '</div>'+
         '</div>';
     } else if (wiz.step===2){
+      var hPreview = wiz.photoDataUrl
+        ? '<img src="'+wiz.photoDataUrl+'" style="width:100%;height:100%;object-fit:cover;display:block" />'
+        : '<div class="muted" style="font-size:12.5px;padding:16px;text-align:center">No photo chosen yet</div>';
       host.innerHTML = stepHead()+
-        '<div class="grid-opts">'+CHAR_TYPES.map(function(c){
-          return '<button type="button" class="opt '+(wiz.charType===c.id?'selected':'')+'" onclick="pickCharType(\''+c.id+'\')"><h4>'+esc(c.title)+'</h4><p>'+esc(c.blurb)+'</p></button>';
-        }).join('')+'</div>';
+        '<div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">'+
+          '<div style="flex:none;margin:0 auto">'+
+            '<div id="heroPreviewBox" style="width:160px;height:240px;border:2px solid var(--line);border-radius:12px;background:var(--panel-2);overflow:hidden;display:flex;align-items:center;justify-content:center">'+hPreview+'</div>'+
+          '</div>'+
+          '<div style="flex:1;min-width:220px">'+
+            '<p class="muted" style="font-size:13.5px;margin:0 0 14px">Upload a clear photo of the hero\'s face for this comic.</p>'+
+            '<input type="file" id="photoInput" accept="image/*" onchange="onPhotoSelected(event)" style="font-size:13px" />'+
+          '</div>'+
+        '</div>';
     } else if (wiz.step===3){
-      renderBuildStep(host);
-    } else if (wiz.step===4){
-      var opts = wardrobeOptionsFor(wiz.charType);
-      var wardrobeNote = wiz.inputMode==='photo'
-        ? 'Pick a costume style/theme for the story (it\'s used as a label — your uploaded photo\'s outfit isn\'t redrawn).'
-        : 'Pick a costume — your character\'s outfit changes to match.';
-      host.innerHTML = stepHead()+
-        '<p class="muted" style="font-size:13.5px;margin:0 0 16px">'+esc(wardrobeNote)+'</p>'+
-        '<div class="grid-opts">'+opts.map(function(w){
-          var thumb = wiz.inputMode==='photo' ? '' :
-            '<span style="flex:none;width:56px;height:84px;border-radius:8px;overflow:hidden;background:var(--panel-2);display:inline-block">'+avatarSVG(wiz.avatar,56,84,w)+'</span>';
-          return '<button type="button" class="opt '+(wiz.wardrobe===w?'selected':'')+'" onclick="pickWardrobe(\''+esc(w)+'\')" style="display:flex;gap:12px;align-items:center;text-align:left">'+
-            thumb+
-            '<span><h4>'+esc(w)+'</h4></span>'+
-          '</button>';
-        }).join('')+'</div>';
-    } else if (wiz.step===5){
-      var previewHTML = wiz.inputMode==='photo' && wiz.photoDataUrl
+      var previewHTML = wiz.photoDataUrl
         ? '<img src="'+wiz.photoDataUrl+'" style="width:110px;height:165px;object-fit:cover;display:block" />'
-        : avatarSVG(wiz.avatar,110,165,wiz.wardrobe);
+        : '<div class="muted" style="font-size:12px;padding:10px;text-align:center">No photo</div>';
       host.innerHTML = stepHead()+
         '<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start">'+
           '<div style="flex:none;border:2px solid var(--line);border-radius:12px;overflow:hidden;background:var(--panel-2)">'+previewHTML+'</div>'+
           '<div class="muted" style="font-size:14.5px;line-height:1.7;flex:1;min-width:200px">'+
             '<div><strong style="color:var(--ink)">Title:</strong> '+esc(wiz.comicTitle||'—')+'</div>'+
             '<div><strong style="color:var(--ink)">Second character:</strong> '+esc(wiz.villainName||'—')+'</div>'+
-            '<div><strong style="color:var(--ink)">Cast:</strong> '+esc((CHAR_TYPES.find(function(c){return c.id===wiz.charType;})||{}).title||'—')+'</div>'+
-            '<div><strong style="color:var(--ink)">Character:</strong> '+(wiz.inputMode==='photo' ? 'your uploaded photo' : 'custom built')+'</div>'+
-            '<div><strong style="color:var(--ink)">Wardrobe:</strong> '+esc(wiz.wardrobe||'—')+'</div>'+
           '</div>'+
         '</div>';
     }
@@ -522,7 +512,7 @@ footer{padding:40px 8px;text-align:center;color:var(--ink-faint);font-size:13px;
     reader.onload = function(){
       resizePhotoToDataUrl(reader.result, 480, 720).then(function(dataUrl){
         wiz.photoDataUrl = dataUrl;
-        if (wiz.step===3) renderBuildStep($('stepHost'));
+        if (wiz.step===2) renderStep();
       });
     };
     reader.readAsDataURL(file);
@@ -703,20 +693,22 @@ footer{padding:40px 8px;text-align:center;color:var(--ink-faint);font-size:13px;
     });
   }
 
-  window.wizardBack = function(){ if (wiz.step>0){ wiz.step--; renderStep(); } };
+  window.wizardBack = function(){ if (wiz.step>0){ $('wizError').textContent=''; wiz.step--; renderStep(); } };
   window.wizardNext = async function(){
+    var err = $('wizError');
     if (wiz.step===0){
       wiz.comicTitle = (($('titleInput')||{}).value || '').trim();
       wiz.lines = [0,1,2,3].map(function(i){ return (($('line'+(i+1)+'Input')||{}).value || '').trim(); });
-      if (!wiz.comicTitle || wiz.lines.some(function(l){ return !l; })){ return; }
+      if (!wiz.comicTitle){ err.textContent='Add a comic title to continue.'; return; }
+      if (wiz.lines.some(function(l){ return !l; })){ err.textContent='Fill in all 4 dialogue lines to continue.'; return; }
     }
     if (wiz.step===1){
       wiz.villainName = (($('villainNameInput')||{}).value || '').trim();
-      if (!wiz.villainName || !wiz.villainPhotoDataUrl) return;
+      if (!wiz.villainName){ err.textContent='Give the second character a name to continue.'; return; }
+      if (!wiz.villainPhotoDataUrl){ err.textContent='Upload a photo for the second character to continue.'; return; }
     }
-    if (wiz.step===2 && !wiz.charType) return;
-    if (wiz.step===3 && wiz.inputMode==='photo' && !wiz.photoDataUrl) return;
-    if (wiz.step===4 && !wiz.wardrobe) return;
+    if (wiz.step===2 && !wiz.photoDataUrl){ err.textContent='Upload the hero\'s photo to continue.'; return; }
+    err.textContent='';
     if (wiz.step===LAST_STEP){ await finishComic(); return; }
     wiz.step++; renderStep();
   };
@@ -728,7 +720,6 @@ footer{padding:40px 8px;text-align:center;color:var(--ink-faint);font-size:13px;
   function toDbRow(ownerId, record){
     return {
       owner_id: ownerId, title: record.title,
-      char_type: record.charType, wardrobe: record.wardrobe,
       villain_title: record.villainTitle, avatar: record.meta,
       photo_url: record.photoUrl, episode2_unlocked: !!record.episode2Unlocked
     };
@@ -737,7 +728,6 @@ footer{padding:40px 8px;text-align:center;color:var(--ink-faint);font-size:13px;
     var meta = row.avatar || {};
     return {
       id: row.id, title: row.title,
-      charType: row.char_type, wardrobe: row.wardrobe,
       villainTitle: row.villain_title, meta: meta,
       villainPhotoUrl: meta.villainPhotoUrl || null,
       lines: meta.lines || ['', '', '', ''],
@@ -747,15 +737,10 @@ footer{padding:40px 8px;text-align:center;color:var(--ink-faint);font-size:13px;
   }
 
   async function finishComic(){
-    var nextBtn = $('nextBtn'); nextBtn.textContent='Rendering character…'; nextBtn.disabled=true;
-    var localImageDataUrl = wiz.inputMode==='photo' && wiz.photoDataUrl
-      ? wiz.photoDataUrl
-      : await rasterizeAvatar(wiz.avatar, 480, 720, wiz.wardrobe);
-    var photoUrl = localImageDataUrl; // kept exactly as uploaded/built — no backend stylization
+    var nextBtn = $('nextBtn'); nextBtn.textContent='Rendering…'; nextBtn.disabled=true;
+    var photoUrl = wiz.photoDataUrl; // kept exactly as uploaded — no backend stylization
 
     var meta = {
-      heroInputMode: wiz.inputMode,
-      heroAvatar: wiz.inputMode==='build' ? wiz.avatar : null,
       villainName: wiz.villainName,
       villainPhotoUrl: wiz.villainPhotoDataUrl,
       lines: wiz.lines,
@@ -764,7 +749,6 @@ footer{padding:40px 8px;text-align:center;color:var(--ink-faint);font-size:13px;
 
     var record = {
       title: wiz.comicTitle,
-      charType: wiz.charType, wardrobe: wiz.wardrobe,
       villainTitle: wiz.villainName, villainPhotoUrl: wiz.villainPhotoDataUrl,
       lines: wiz.lines.slice(), meta: meta,
       photoUrl: photoUrl, episode2Unlocked: false
@@ -1030,7 +1014,7 @@ footer{padding:40px 8px;text-align:center;color:var(--ink-faint);font-size:13px;
         return '<div class="card">'+
           (r.photoUrl ? '<img class="comic-thumb" src="'+esc(r.photoUrl)+'" style="height:140px;object-fit:cover">' : '')+
           '<h4 style="margin:0 0 6px;font-size:15.5px">'+esc(r.title||'Untitled')+'</h4>'+
-          '<p class="muted" style="margin:0 0 10px;font-size:13px">'+esc(r.wardrobe||'')+'</p>'+
+          '<p class="muted" style="margin:0 0 10px;font-size:13px">'+(r.villainTitle ? 'vs. '+esc(r.villainTitle) : '')+'</p>'+
           '<button class="btn btn-ghost" style="padding:8px 16px;font-size:13px" onclick="reopenComic(\''+esc(JSON.stringify(r)).replace(/'/g,'&#39;')+'\')">View</button>'+
         '</div>';
       }).join('');
