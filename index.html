@@ -169,37 +169,7 @@ footer{padding:40px 8px;text-align:center;color:var(--ink-faint);font-size:13px;
       <button class="btn btn-ghost" style="margin-top:10px" onclick="nav('mycomics')">Go to My Comics</button>
     </div>
 
-    <div class="card" style="max-width:520px;margin:28px auto 0">
-      <h3 style="margin:0 0 8px;font-size:18px">Continue the story — Episode 2</h3>
-      <p class="muted" style="font-size:14px;margin:0 0 18px">The showdown continues. Unlock Episode 2 to see how it ends.</p>
-      <div id="episodeLockedBox">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px">
-          <span class="muted" style="font-size:14px">Episode 2 price</span>
-          <strong id="episodePrice"></strong>
-        </div>
-        <button class="btn btn-primary btn-block" id="stripeBtn" onclick="openStripe()">Unlock Episode 2</button>
-        <button class="btn btn-ghost btn-block" style="margin-top:10px" onclick="confirmPaid()">I've completed payment — unlock</button>
-        <p class="muted" id="stripeNote" style="font-size:12px;margin-top:12px"></p>
-      </div>
-      <div id="episodeUnlockedBox" hidden>
-        <div id="episode2Form">
-          <p class="muted" style="font-size:13.5px;margin:0 0 14px">Write Episode 2's conversation — same two characters, new lines.</p>
-          <div class="field" style="margin-bottom:14px"><label for="ep2TitleInput">Episode 2 title</label><input type="text" id="ep2TitleInput" placeholder="e.g. The Confrontation" /></div>
-          <div class="field" style="margin-bottom:14px"><label for="ep2Line1Input">Character 1 says (panel 1)</label><textarea id="ep2Line1Input" rows="2"></textarea></div>
-          <div class="field" style="margin-bottom:14px"><label for="ep2Line2Input">Character 2 says (panel 2)</label><textarea id="ep2Line2Input" rows="2"></textarea></div>
-          <div class="field" style="margin-bottom:14px"><label for="ep2Line3Input">Character 1 says (panel 3)</label><textarea id="ep2Line3Input" rows="2"></textarea></div>
-          <div class="field" style="margin-bottom:14px"><label for="ep2Line4Input">Character 2 says (panel 4)</label><textarea id="ep2Line4Input" rows="2"></textarea></div>
-          <button class="btn btn-primary btn-block" onclick="createEpisode2()">Create Episode 2 panel</button>
-        </div>
-        <div id="episode2Output" hidden>
-          <canvas id="resultCanvas2" width="640" height="640" style="width:100%;border-radius:12px;border:2px solid var(--ink);background:var(--panel-2)"></canvas>
-          <div style="display:flex;gap:12px;justify-content:center;margin-top:20px;flex-wrap:wrap">
-            <button class="btn btn-primary" onclick="downloadResult('png',2)">Download image</button>
-            <button class="btn btn-ghost" onclick="downloadResult('pdf',2)">Download PDF</button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <div id="episodesContainer"></div>
   </section>
 
   <section id="view-mycomics" hidden>
@@ -228,7 +198,7 @@ footer{padding:40px 8px;text-align:center;color:var(--ink-faint);font-size:13px;
 
   // Fill with a real Stripe Payment Link URL once you have one.
   var STRIPE_PAYMENT_LINK = '';
-  var EPISODE2_PRICE = '[YOUR PRICE]';
+  var EPISODE_PRICE = '[YOUR PRICE]'; // used for Episode 2, 3, 4, ... — same price every time
   // ====================================================================
 
   var sb = (window.supabase && SUPABASE_URL.indexOf('YOUR-PROJECT') === -1)
@@ -718,21 +688,32 @@ footer{padding:40px 8px;text-align:center;color:var(--ink-faint);font-size:13px;
   // character's name/photo, the dialogue lines, and (once created)
   // Episode 2's own title/lines — so no database schema change is needed.
   function toDbRow(ownerId, record){
+    var meta = record.meta || {};
+    meta.episodes = record.episodes || {};
     return {
       owner_id: ownerId, title: record.title,
-      villain_title: record.villainTitle, avatar: record.meta,
-      photo_url: record.photoUrl, episode2_unlocked: !!record.episode2Unlocked
+      villain_title: record.villainTitle, avatar: meta,
+      photo_url: record.photoUrl,
+      episode2_unlocked: !!(record.episodes && record.episodes[2] && record.episodes[2].unlocked)
     };
   }
   function fromDbRow(row){
     var meta = row.avatar || {};
+    var episodes = meta.episodes || {};
+    // Back-compat: older saved rows used a single `episode2` field and the
+    // `episode2_unlocked` column instead of a keyed `episodes` object.
+    if (!episodes[2] && (meta.episode2 || row.episode2_unlocked)){
+      episodes[2] = meta.episode2
+        ? { unlocked:true, title: meta.episode2.title, lines: meta.episode2.lines }
+        : { unlocked: !!row.episode2_unlocked };
+    }
     return {
       id: row.id, title: row.title,
       villainTitle: row.villain_title, meta: meta,
       villainPhotoUrl: meta.villainPhotoUrl || null,
       lines: meta.lines || ['', '', '', ''],
-      episode2: meta.episode2 || null,
-      photoUrl: row.photo_url, episode2Unlocked: row.episode2_unlocked, createdAt: row.created_at
+      episodes: episodes,
+      photoUrl: row.photo_url, createdAt: row.created_at
     };
   }
 
@@ -744,14 +725,14 @@ footer{padding:40px 8px;text-align:center;color:var(--ink-faint);font-size:13px;
       villainName: wiz.villainName,
       villainPhotoUrl: wiz.villainPhotoDataUrl,
       lines: wiz.lines,
-      episode2: null
+      episodes: {}
     };
 
     var record = {
       title: wiz.comicTitle,
       villainTitle: wiz.villainName, villainPhotoUrl: wiz.villainPhotoDataUrl,
-      lines: wiz.lines.slice(), meta: meta,
-      photoUrl: photoUrl, episode2Unlocked: false
+      lines: wiz.lines.slice(), meta: meta, episodes: {},
+      photoUrl: photoUrl
     };
 
     nextBtn.textContent='Saving…';
@@ -774,36 +755,119 @@ footer{padding:40px 8px;text-align:center;color:var(--ink-faint);font-size:13px;
   async function drawResult(record){
     lastRecord = record;
     await drawPanel('resultCanvas', record, '#FF5B42');
-    renderEpisodeBox(record);
+    $('episodesContainer').innerHTML = '';
+    renderEpisodeStage(record, 2);
   }
-  async function drawEpisode2(record){
-    if (!record.episode2 || !record.episode2.title) return;
-    var ep2 = {
-      photoUrl: record.photoUrl,
-      villainPhotoUrl: record.villainPhotoUrl,
-      villainTitle: record.villainTitle,
-      title: record.episode2.title,
-      lines: record.episode2.lines
-    };
-    await drawPanel('resultCanvas2', ep2, '#5B8CFF');
+
+  // Quick-fill continuation stories for Episode 2+, independent of which
+  // Episode 1 preset was used (same two characters, a fresh beat).
+  var EPISODE_PRESETS = [
+    {id:'confrontation', title:'The Confrontation', lines:['You again. This ends now.', 'You think you can stop me this time?', 'I know I can.', 'Then let\'s find out...']},
+    {id:'twist', title:'The Twist', lines:['Wait... I don\'t understand.', 'There\'s more to this than you know.', 'Then explain it to me.', 'Not yet. Not until you\'re ready.']},
+    {id:'alliance', title:'An Uneasy Alliance', lines:['We don\'t have to be enemies.', 'Convince me.', 'A bigger threat is coming. We need each other.', 'Fine. For now.']},
+    {id:'showdown', title:'The Final Showdown', lines:['This is it. No more running.', 'I was hoping you\'d say that.', 'Give it everything you\'ve got.', 'Oh, I plan to...']}
+  ];
+
+  // Builds/updates the card for episode N (2, 3, 4, ...): a paywall if
+  // locked, a title+4-line form once unlocked but not yet written, or the
+  // finished panel once written — which then reveals episode N+1's card
+  // below it, so the story can keep going indefinitely.
+  function renderEpisodeStage(record, n){
+    var episodes = record.episodes || (record.episodes = {});
+    var ep = episodes[n];
+    var box = document.getElementById('epStage'+n);
+    if (!box){
+      box = document.createElement('div');
+      box.className = 'card';
+      box.id = 'epStage'+n;
+      box.style.cssText = 'max-width:520px;margin:28px auto 0';
+      $('episodesContainer').appendChild(box);
+    }
+
+    if (!ep || !ep.unlocked){
+      box.innerHTML =
+        '<h3 style="margin:0 0 8px;font-size:18px">Continue the story — Episode '+n+'</h3>'+
+        '<p class="muted" style="font-size:14px;margin:0 0 18px">Unlock Episode '+n+' to keep the story going.</p>'+
+        '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px">'+
+          '<span class="muted" style="font-size:14px">Episode '+n+' price</span>'+
+          '<strong>'+esc(EPISODE_PRICE)+'</strong>'+
+        '</div>'+
+        '<button class="btn btn-primary btn-block" '+(STRIPE_PAYMENT_LINK?'':'disabled')+' onclick="openStripe()">Unlock Episode '+n+'</button>'+
+        '<button class="btn btn-ghost btn-block" style="margin-top:10px" onclick="confirmPaidForEpisode('+n+')">I\'ve completed payment — unlock</button>'+
+        '<p class="muted" style="font-size:12px;margin-top:12px">'+(STRIPE_PAYMENT_LINK
+          ? 'Opens Stripe checkout in a new tab. After paying, come back and confirm below — this build has no payment-verification server yet.'
+          : 'Stripe isn\'t connected yet — once a real Stripe Payment Link is added, this button opens real checkout to your bank account.')+'</p>';
+      return;
+    }
+
+    if (!ep.title){
+      box.innerHTML =
+        '<h3 style="margin:0 0 8px;font-size:18px">Episode '+n+'</h3>'+
+        '<p class="muted" style="font-size:13.5px;margin:0 0 10px">Write Episode '+n+'\'s conversation — same two characters, new lines.</p>'+
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">'+EPISODE_PRESETS.map(function(p){
+          return '<button type="button" class="btn btn-ghost" style="padding:8px 14px;font-size:12.5px" onclick="fillEpisodePreset('+n+',\''+p.id+'\')">'+esc(p.title)+'</button>';
+        }).join('')+'</div>'+
+        '<div class="field" style="margin-bottom:14px"><label for="ep'+n+'TitleInput">Episode '+n+' title</label><input type="text" id="ep'+n+'TitleInput" placeholder="e.g. The Confrontation" /></div>'+
+        '<div class="field" style="margin-bottom:14px"><label for="ep'+n+'Line1Input">Character 1 says (panel 1)</label><textarea id="ep'+n+'Line1Input" rows="2"></textarea></div>'+
+        '<div class="field" style="margin-bottom:14px"><label for="ep'+n+'Line2Input">Character 2 says (panel 2)</label><textarea id="ep'+n+'Line2Input" rows="2"></textarea></div>'+
+        '<div class="field" style="margin-bottom:14px"><label for="ep'+n+'Line3Input">Character 1 says (panel 3)</label><textarea id="ep'+n+'Line3Input" rows="2"></textarea></div>'+
+        '<div class="field" style="margin-bottom:14px"><label for="ep'+n+'Line4Input">Character 2 says (panel 4)</label><textarea id="ep'+n+'Line4Input" rows="2"></textarea></div>'+
+        '<p class="muted" id="ep'+n+'Error" style="color:#FF8A75;font-size:13px;margin:0 0 10px;min-height:16px"></p>'+
+        '<button class="btn btn-primary btn-block" onclick="createEpisode('+n+')">Create Episode '+n+' panel</button>';
+      return;
+    }
+
+    box.innerHTML =
+      '<h3 style="margin:0 0 8px;font-size:18px">Episode '+n+': '+esc(ep.title)+'</h3>'+
+      '<canvas id="resultCanvas'+n+'" width="640" height="640" style="width:100%;border-radius:12px;border:2px solid var(--ink);background:var(--panel-2)"></canvas>'+
+      '<div style="display:flex;gap:12px;justify-content:center;margin-top:20px;flex-wrap:wrap">'+
+        '<button class="btn btn-primary" onclick="downloadResult(\'png\','+n+')">Download image</button>'+
+        '<button class="btn btn-ghost" onclick="downloadResult(\'pdf\','+n+')">Download PDF</button>'+
+      '</div>';
+    drawPanel('resultCanvas'+n, {
+      title: ep.title, lines: ep.lines,
+      photoUrl: record.photoUrl, villainPhotoUrl: record.villainPhotoUrl, villainTitle: record.villainTitle
+    }, '#5B8CFF');
+
+    renderEpisodeStage(record, n+1); // tee up the next one
   }
-  window.createEpisode2 = async function(){
-    if (!lastRecord) return;
-    var title = (($('ep2TitleInput')||{}).value || '').trim();
-    var lines = [1,2,3,4].map(function(i){ return (($('ep2Line'+i+'Input')||{}).value || '').trim(); });
-    if (!title || lines.some(function(l){ return !l; })) return;
 
-    lastRecord.episode2 = { title: title, lines: lines };
-    if (!lastRecord.meta) lastRecord.meta = {};
-    lastRecord.meta.episode2 = lastRecord.episode2;
+  window.fillEpisodePreset = function(n, id){
+    var p = EPISODE_PRESETS.find(function(x){ return x.id===id; });
+    if (!p) return;
+    if ($('ep'+n+'TitleInput')) $('ep'+n+'TitleInput').value = p.title;
+    for (var i=0;i<4;i++){ if ($('ep'+n+'Line'+(i+1)+'Input')) $('ep'+n+'Line'+(i+1)+'Input').value = p.lines[i]; }
+  };
 
+  async function persistEpisodes(record){
+    if (!record.meta) record.meta = {};
+    record.meta.episodes = record.episodes;
     try {
-      if (sb && lastRecord.id) await sb.from('projects').update({ avatar: lastRecord.meta }).eq('id', lastRecord.id);
+      if (sb && record.id) await sb.from('projects').update({ avatar: record.meta, episode2_unlocked: !!(record.episodes[2] && record.episodes[2].unlocked) }).eq('id', record.id);
     } catch(e){ /* keep going even if save fails */ }
+  }
 
-    $('episode2Form').hidden = true;
-    $('episode2Output').hidden = false;
-    await drawEpisode2(lastRecord);
+  window.confirmPaidForEpisode = async function(n){
+    if (!lastRecord) return;
+    if (!lastRecord.episodes) lastRecord.episodes = {};
+    lastRecord.episodes[n] = lastRecord.episodes[n] || {};
+    lastRecord.episodes[n].unlocked = true;
+    await persistEpisodes(lastRecord);
+    renderEpisodeStage(lastRecord, n);
+  };
+
+  window.createEpisode = async function(n){
+    if (!lastRecord) return;
+    var title = (($('ep'+n+'TitleInput')||{}).value || '').trim();
+    var lines = [1,2,3,4].map(function(i){ return (($('ep'+n+'Line'+i+'Input')||{}).value || '').trim(); });
+    var err = $('ep'+n+'Error');
+    if (!title){ if (err) err.textContent='Add a title to continue.'; return; }
+    if (lines.some(function(l){ return !l; })){ if (err) err.textContent='Fill in all 4 lines to continue.'; return; }
+
+    if (!lastRecord.episodes) lastRecord.episodes = {};
+    lastRecord.episodes[n] = { unlocked:true, title:title, lines:lines };
+    await persistEpisodes(lastRecord);
+    renderEpisodeStage(lastRecord, n);
   };
   // Draws a full comic PAGE as a 4-panel dialogue strip: both characters
   // take turns speaking in speech bubbles, like an actual back-and-forth
@@ -867,19 +931,25 @@ footer{padding:40px 8px;text-align:center;color:var(--ink-faint);font-size:13px;
     ctx.restore();
   }
 
-  // Draws any character's photo filling the panel, with an optional small
-  // name tag (used for the second character) and a speech bubble.
+  // Draws any character's photo in the UPPER part of the panel, with the
+  // speech bubble in its own separate strip below — not overlaid on top of
+  // the photo, so the face (even a tight close-up) is never covered.
   async function drawCharacterPanel(ctx,x,y,w,h,photoUrl,nameLabel,line,tailSide){
-    drawHalftonePanel(ctx,x,y,w,h,'#1F1C26');
+    var bh = Math.max(56, Math.round(h*0.3)); // must match drawBubble()'s own math
+    var imgH = h - bh - 14;
+    drawHalftonePanel(ctx,x,y,w,imgH,'#1F1C26');
     await new Promise(function(resolve){
       if (!photoUrl){ resolve(); return; }
       var img = new Image(); img.crossOrigin='anonymous';
       img.onload = function(){
         ctx.save();
-        ctx.beginPath(); ctx.rect(x,y,w,h); ctx.clip();
-        var scale = Math.max(w/img.width, h/img.height)*1.08;
+        ctx.beginPath(); ctx.rect(x,y,w,imgH); ctx.clip();
+        var scale = Math.max(w/img.width, imgH/img.height)*1.03;
         var dw = img.width*scale, dh = img.height*scale;
-        ctx.drawImage(img, x+(w-dw)/2, y+(h-dh)*0.15, dw, dh);
+        // Anchor toward the top of the frame so a close-up face (usually
+        // centered in the upper half of an uploaded photo) stays fully
+        // visible instead of being cropped by the zoom.
+        ctx.drawImage(img, x+(w-dw)/2, y+(imgH-dh)*0.08, dw, dh);
         ctx.restore();
         resolve();
       };
@@ -887,6 +957,7 @@ footer{padding:40px 8px;text-align:center;color:var(--ink-faint);font-size:13px;
       img.src = photoUrl;
     });
     ctx.strokeStyle='#F5F1E8'; ctx.lineWidth=5; ctx.strokeRect(x,y,w,h);
+    ctx.strokeStyle='#F5F1E8'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(x,y+imgH+7); ctx.lineTo(x+w,y+imgH+7); ctx.stroke();
     if (nameLabel){
       ctx.font='700 11px Space Grotesk, sans-serif';
       var label = String(nameLabel).toUpperCase().slice(0,24);
@@ -900,16 +971,18 @@ footer{padding:40px 8px;text-align:center;color:var(--ink-faint);font-size:13px;
   }
 
   function drawVillainPanel(ctx,x,y,w,h,color,villainTitle,line,tailSide){
-    drawHalftonePanel(ctx,x,y,w,h,'#0E0D12');
-    var cx=x+w/2, cy=y+h*0.4;
+    var bh = Math.max(56, Math.round(h*0.3));
+    var imgH = h - bh - 14;
+    drawHalftonePanel(ctx,x,y,w,imgH,'#0E0D12');
+    var cx=x+w/2, cy=y+imgH*0.48;
     ctx.save();
-    ctx.beginPath(); ctx.rect(x,y,w,h); ctx.clip();
+    ctx.beginPath(); ctx.rect(x,y,w,imgH); ctx.clip();
     ctx.fillStyle='#15131A';
     ctx.beginPath();
-    ctx.moveTo(cx, cy-h*0.28);
-    ctx.quadraticCurveTo(cx-w*0.26, cy-h*0.05, cx-w*0.22, cy+h*0.22);
-    ctx.quadraticCurveTo(cx, cy+h*0.3, cx+w*0.22, cy+h*0.22);
-    ctx.quadraticCurveTo(cx+w*0.26, cy-h*0.05, cx, cy-h*0.28);
+    ctx.moveTo(cx, cy-imgH*0.3);
+    ctx.quadraticCurveTo(cx-w*0.26, cy-imgH*0.06, cx-w*0.22, cy+imgH*0.24);
+    ctx.quadraticCurveTo(cx, cy+imgH*0.32, cx+w*0.22, cy+imgH*0.24);
+    ctx.quadraticCurveTo(cx+w*0.26, cy-imgH*0.06, cx, cy-imgH*0.3);
     ctx.closePath(); ctx.fill();
     ctx.strokeStyle=color; ctx.lineWidth=3; ctx.stroke();
     ctx.fillStyle=color;
@@ -917,8 +990,9 @@ footer{padding:40px 8px;text-align:center;color:var(--ink-faint);font-size:13px;
     ctx.beginPath(); ctx.arc(cx+w*0.055, cy, Math.max(3,w*0.018), 0, Math.PI*2); ctx.fill();
     ctx.restore();
     ctx.strokeStyle='#F5F1E8'; ctx.lineWidth=5; ctx.strokeRect(x,y,w,h);
+    ctx.strokeStyle='#F5F1E8'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(x,y+imgH+7); ctx.lineTo(x+w,y+imgH+7); ctx.stroke();
     ctx.fillStyle='#F5F1E8'; ctx.textAlign='center'; ctx.font='700 12px Space Grotesk, sans-serif';
-    ctx.fillText(villainTitle.toUpperCase().slice(0,30), cx, y+h-10);
+    ctx.fillText(villainTitle.toUpperCase().slice(0,30), cx, y+imgH-10);
     ctx.textAlign='left';
     drawBubble(ctx,x,y,w,h,line,tailSide);
   }
@@ -951,41 +1025,16 @@ footer{padding:40px 8px;text-align:center;color:var(--ink-faint);font-size:13px;
     ctx.fillText(line,x,yy);
   }
 
-  function renderEpisodeBox(record){
-    $('episodePrice').textContent = EPISODE2_PRICE;
-    var unlocked = !!record.episode2Unlocked;
-    $('episodeLockedBox').hidden = unlocked;
-    $('episodeUnlockedBox').hidden = !unlocked;
-    var note = $('stripeNote'), btn = $('stripeBtn');
-    if (!STRIPE_PAYMENT_LINK){
-      note.textContent = 'Stripe isn\'t connected yet — once a real Stripe Payment Link is added, this button opens real checkout to your bank account.';
-      btn.disabled = true;
-    } else {
-      note.textContent = 'Opens Stripe checkout in a new tab. After paying, come back and confirm below — this build has no payment-verification server yet.';
-      btn.disabled = false;
-    }
-    if (unlocked){
-      var hasEp2 = record.episode2 && record.episode2.title;
-      $('episode2Form').hidden = !!hasEp2;
-      $('episode2Output').hidden = !hasEp2;
-      if (hasEp2) drawEpisode2(record);
-    }
-  }
   window.openStripe = function(){
     if (!STRIPE_PAYMENT_LINK) return;
     var a = document.createElement('a'); a.href = STRIPE_PAYMENT_LINK; a.target = '_blank'; a.rel = 'noopener';
     document.body.appendChild(a); a.click(); a.remove();
   };
-  window.confirmPaid = async function(){
-    if (!lastRecord) return;
-    lastRecord.episode2Unlocked = true;
-    try { if (sb && lastRecord.id) await sb.from('projects').update({ episode2_unlocked: true }).eq('id', lastRecord.id); } catch(e){}
-    renderEpisodeBox(lastRecord);
-  };
 
   window.downloadResult = async function(kind, episode){
-    var canvas = $(episode===2 ? 'resultCanvas2' : 'resultCanvas');
-    var filename = 'hero-r-comic-ep'+(episode===2?2:1)+'.' + (kind==='pdf'?'pdf':'png');
+    var epNum = episode || 1;
+    var canvas = $(epNum>1 ? ('resultCanvas'+epNum) : 'resultCanvas');
+    var filename = 'hero-r-comic-ep'+epNum+'.' + (kind==='pdf'?'pdf':'png');
     try {
       if (kind==='png'){
         var blob = await new Promise(function(res){ canvas.toBlob(res,'image/png'); });
